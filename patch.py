@@ -45,6 +45,38 @@ def patch_bzimage(data:bytes,key_dict:dict):
     new_data = new_data.replace(vmlinux_xz,new_vmlinux_xz)
     return new_data
 
+def patch_block(dev:str,file:str,key_dict):
+    BLOCK_SIZE = 4096
+    #sudo debugfs /dev/nbd0p1 -R 'stats' | grep "Block size" | sed -n '1p' | cut -d ':' -f 2 
+
+    #sudo debugfs /dev/nbd0p1 -R 'stat boot/initrd.rgz' 2> /dev/null | sed -n '11p'
+    stdout,_ = run_shell_command(f"debugfs {dev} -R 'stat {file}' 2> /dev/null | sed -n '11p' ")
+    #(0-11):1592-1603, (IND):1173, (12-15):1604-1607, (16-26):1424-1434
+    blocks_info = stdout.decode().strip().split(',')
+    blocks = []
+    ind_block_id = None
+    for block_info in blocks_info:
+        _tmp = block_info.strip().split(':')
+        if _tmp[0].strip() == '(IND)':
+            ind_block_id =  int(_tmp[1])
+        else:
+            id_range = _tmp[0].strip().replace('(','').replace(')','').split('-')
+            block_range = _tmp[1].strip().replace('(','').replace(')','').split('-')
+            blocks += [id for id in range(int(block_range[0]),int(block_range[1])+1)]
+    print(f' blocks : {len(blocks)} ind_block_id : {ind_block_id}')
+    
+    #sudo debugfs /dev/nbd0p1  -R 'cat boot/initrd.rgz' > data
+    data,stderr = run_shell_command(f"debugfs {dev} -R 'cat {file}' 2> /dev/null")
+    new_data = patch_kernel(data,key_dict)
+    print(f'write block {len(blocks)} : [',end="")
+    with open(dev,'wb') as f:
+        for index,block_id in enumerate(blocks):
+            print('#',end="")
+            f.seek(block_id*BLOCK_SIZE)
+            f.write(new_data[index*BLOCK_SIZE:(index+1)*BLOCK_SIZE])
+        f.flush()
+        print(']')
+
 def patch_initrd_xz(initrd_xz:bytes,key_dict:dict,ljust=True):
     initrd = lzma.decompress(initrd_xz)
     new_initrd = initrd  
@@ -75,7 +107,6 @@ def find_7zXZ_data(data:bytes):
 def patch_elf(data: bytes,key_dict:dict):
     initrd_xz = find_7zXZ_data(data)
     return patch_initrd_xz(initrd_xz,key_dict)
-
 
 def patch_pe(data: bytes,key_dict:dict):
     vmlinux_xz = find_7zXZ_data(data)
@@ -195,7 +226,7 @@ def patch_kernel(data:bytes,key_dict):
         return patch_elf(data,key_dict)
     elif data[:5] == b'\xFD7zXZ':
         print('patching initrd')
-        return patch_initrd_xz(data,key_dict,False)
+        return patch_initrd_xz(data,key_dict)
     else:
         raise Exception('unknown kernel format')
 
@@ -213,13 +244,16 @@ def patch_squashfs(path,key_dict):
                 data = open(file,'rb').read()
                 url_dict = {
                     os.environ['MIKRO_LICENCE_URL'].encode():os.environ['CUSTOM_LICENCE_URL'].encode(),
-                    os.environ['MIKRO_UPGRADE_URL'].encode():os.environ['CUSTOM_UPGRADE_URL'].encode()
+                    os.environ['MIKRO_UPGRADE_URL'].encode():os.environ['CUSTOM_UPGRADE_URL'].encode(),
+                    os.environ['MIKRO_CLOUD_URL'].encode():os.environ['CUSTOM_CLOUD_URL'].encode(),
+                    os.environ['MIKRO_CLOUD_PUBLIC_KEY'].encode():os.environ['CUSTOM_CLOUD_PUBLIC_KEY'].encode(),
                 }
                 for old_url,new_url in url_dict.items():
                     if old_url in data:
                         print(f'{file} url patched {old_url.decode()[:7]}...')
                         data = data.replace(old_url,new_url)
                         open(file,'wb').write(data)
+                        
                 if os.path.split(file)[1] == 'licupgr':
                     url_dict = {
                         os.environ['MIKRO_RENEW_URL'].encode():os.environ['CUSTOM_RENEW_URL'].encode(),
@@ -230,56 +264,42 @@ def patch_squashfs(path,key_dict):
                             data = data.replace(old_url,new_url)
                             open(file,'wb').write(data)
                     
-
 def run_shell_command(command):
     process = subprocess.run(command, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return process.stdout, process.stderr
 
-def patch_npk_file(key_dict,kcdsa_private_key,eddsa_private_key,input_file,output_file=None):
-    npk = NovaPackage.load(input_file)    
-    if npk[NpkPartID.NAME_INFO].data.name == 'system':
-        file_container = NpkFileContainer.unserialize_from(npk[NpkPartID.FILE_CONTAINER].data)
+def patch_npk_package(package,key_dict):
+    if package[NpkPartID.NAME_INFO].data.name == 'system':
+        file_container = NpkFileContainer.unserialize_from(package[NpkPartID.FILE_CONTAINER].data)
         for item in file_container:
-            if item.name == b'boot/EFI/BOOT/BOOTX64.EFI':
+            if item.name in [b'boot/EFI/BOOT/BOOTX64.EFI',b'boot/kernel',b'boot/initrd.rgz']:
                 print(f'patch {item.name} ...')
                 item.data = patch_kernel(item.data,key_dict)
-            elif item.name == b'boot/kernel':
-                print(f'patch {item.name} ...')
-                item.data = patch_kernel(item.data,key_dict)
-            elif item.name == b'boot/initrd.rgz':
-                print(f'patch {item.name} ...')
-                item.data = patch_kernel(item.data,key_dict)
-                open('initrd.rgz','wb').write(item.data)
-       
-        npk[NpkPartID.FILE_CONTAINER].data = file_container.serialize()
-        try:
-            squashfs_file = 'squashfs-root.sfs'
-            extract_dir = 'squashfs-root'
-            open(squashfs_file,'wb').write(npk[NpkPartID.SQUASHFS].data)
-            print(f"extract {squashfs_file} ...")
-            _, stderr = run_shell_command(f"unsquashfs -d {extract_dir} {squashfs_file}")
-            print(stderr.decode())
-            patch_squashfs(extract_dir,key_dict)
-            keygen = os.path.join(extract_dir,'bin/keygen')
-            if 'ARCH' in os.environ and os.environ['ARCH'] =='':
-                run_shell_command(f"sudo cp keygen/keygen_x86 {keygen}")
-                run_shell_command(f"sudo chmod a+x {keygen}")
-            elif 'ARCH' in os.environ and os.environ['ARCH'] == '-arm64':
-                run_shell_command(f"sudo cp keygen/keygen_aarch64 {keygen}")
-                run_shell_command(f"sudo chmod a+x {keygen}")
-            print(f"pack {extract_dir} ...")
-            run_shell_command(f"rm -f {squashfs_file}")
-            _, stderr = run_shell_command(f"mksquashfs {extract_dir} {squashfs_file} -quiet -comp xz -no-xattrs -b 256k")
-            print(stderr.decode())
-        except Exception as e:
-            print(e)
+        package[NpkPartID.FILE_CONTAINER].data = file_container.serialize()
+        squashfs_file = 'squashfs-root.sfs'
+        extract_dir = 'squashfs-root'
+        open(squashfs_file,'wb').write(package[NpkPartID.SQUASHFS].data)
+        print(f"extract {squashfs_file} ...")
+        run_shell_command(f"unsquashfs -d {extract_dir} {squashfs_file}")
+        patch_squashfs(extract_dir,key_dict)
+        logo = os.path.join(extract_dir,"nova/lib/console/logo.txt")
+        run_shell_command(f"sudo sed -i '1d' {logo}") 
+        run_shell_command(f"sudo sed -i '8s#.*#  elseif@live.cn     https://github.com/elseif/MikroTikPatch#' {logo}")
+        print(f"pack {extract_dir} ...")
+        run_shell_command(f"rm -f {squashfs_file}")
+        run_shell_command(f"mksquashfs {extract_dir} {squashfs_file} -quiet -comp xz -no-xattrs -b 256k")
         print(f"clean ...")
         run_shell_command(f"rm -rf {extract_dir}")
-        npk[NpkPartID.SQUASHFS].data = open(squashfs_file,'rb').read()
+        package[NpkPartID.SQUASHFS].data = open(squashfs_file,'rb').read()
         run_shell_command(f"rm -f {squashfs_file}")
-    build_time = os.environ['BUILD_TIME'] if 'BUILD_TIME' in os.environ else None
-    if build_time:
-        npk[NpkPartID.NAME_INFO].data._build_time = int(os.environ['BUILD_TIME'])
+
+def patch_npk_file(key_dict,kcdsa_private_key,eddsa_private_key,input_file,output_file=None):
+    npk = NovaPackage.load(input_file)   
+    if len(npk._packages) > 0:
+        for package in npk._packages:
+            patch_npk_package(package,key_dict)
+    else:
+        patch_npk_package(npk,key_dict)
     npk.sign(kcdsa_private_key,eddsa_private_key)
     npk.save(output_file or input_file)
 
@@ -293,6 +313,9 @@ if __name__ == '__main__':
     kernel_parser = subparsers.add_parser('kernel',help='patch kernel file')
     kernel_parser.add_argument('input',type=str, help='Input file')
     kernel_parser.add_argument('-O','--output',type=str,help='Output file')
+    block_parser = subparsers.add_parser('block',help='patch block file')
+    block_parser.add_argument('dev',type=str, help='block device')
+    block_parser.add_argument('file',type=str, help='file path')
     netinstall_parser = subparsers.add_parser('netinstall',help='patch netinstall file')
     netinstall_parser.add_argument('input',type=str, help='Input file')
     netinstall_parser.add_argument('-O','--output',type=str,help='Output file')
@@ -310,6 +333,9 @@ if __name__ == '__main__':
         print(f'patching {args.input} ...')
         data = patch_kernel(open(args.input,'rb').read(),key_dict)
         open(args.output or args.input,'wb').write(data)
+    elif args.command == 'block':
+        print(f'patching {args.file} in {args.dev} ...')
+        patch_block(args.dev,args.file,key_dict)
     elif args.command == 'netinstall':
         print(f'patching {args.input} ...')
         patch_netinstall(key_dict,args.input,args.output)
