@@ -321,15 +321,12 @@ class MyNovaPackage(NovaPackage):
                 info.append(f"\t=>Header: {part.data.decode() if part.data.decode() else None}")
             elif part.id == NpkPartID.SIGNATURE:
                 info.append("\t=>Signature:")
-                # 从SIGNATURE数据中计算SHA-1哈希值
-                sha1_hash = hashlib.sha1(part.data).hexdigest()
                 try:
                     signature = part.data.decode('utf-8')
                     info.append(f"\t\tSignature Str: {signature.upper()}")
                 except UnicodeDecodeError:
                     signature = part.data.hex()
                     info.append(f"\t\tSignature Hex: {signature.upper()}")
-                info.append(f"\t\tSignature SHA-1: {sha1_hash}")
             elif part.id == NpkPartID.ZERO_PADDING:
                 info.append(f"\t=>Zero Padding: No display required")
 
@@ -352,13 +349,13 @@ class MyNovaPackage(NovaPackage):
 if __name__ == '__main__':
     import argparse
 
-    parser = argparse.ArgumentParser(description='nova package creator and editor')
+    parser = argparse.ArgumentParser(description='nova package show and unpackage')
     subparsers = parser.add_subparsers(dest="command")
-    verify_parser = subparsers.add_parser('show', help='Show npk file')
-    verify_parser.add_argument('input', type=str, help='Input file')
-    create_option_parser = subparsers.add_parser('unpkg', help='Unpackage npk file')
-    create_option_parser.add_argument('input', type=str, help='From npk file')
-    create_option_parser.add_argument('output', type=str, help='Output file')
+    show_parser = subparsers.add_parser('show', help='Show npk file')
+    show_parser.add_argument('input', type=str, help='Input file')
+    unpkg_parser = subparsers.add_parser('unpkg', help='Unpackage npk file')
+    unpkg_parser.add_argument('input', type=str, help='From npk file')
+    unpkg_parser.add_argument('output', type=str, help='Output file')
     args = parser.parse_args()
 
     if args.command == 'show':
