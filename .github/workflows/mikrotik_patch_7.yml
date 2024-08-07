@@ -30,7 +30,6 @@ env:
 jobs:
   Set_BuildTime:
     runs-on: ubuntu-22.04
-    if: github.ref == 'refs/heads/mydev'
     outputs:
       BUILD_TIME: ${{ steps.set_buildtime.outputs.BUILD_TIME }}
     steps:
@@ -41,7 +40,6 @@ jobs:
   Patch_RouterOS:
     needs: Set_BuildTime
     runs-on: ubuntu-22.04
-    # if: github.ref == 'refs/heads/mydev'
     strategy:
       matrix:
 #        arch: [x86,arm64]
@@ -56,12 +54,10 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-        
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.11' 
-
+        python-version: '3.11'
     - name: Get latest routeros version
       id: get_latest
       run: |
