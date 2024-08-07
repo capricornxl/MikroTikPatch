@@ -4,3 +4,7 @@ venv/
 app/
 test_*.py
 hack
+/gen_keys.py
+/un&show_npk.py
+/.squashfs-root.sfs
+/keys/
