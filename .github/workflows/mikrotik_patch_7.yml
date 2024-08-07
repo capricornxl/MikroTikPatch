@@ -30,6 +30,7 @@ env:
 jobs:
   Set_BuildTime:
     runs-on: ubuntu-22.04
+    if: github.ref == 'refs/heads/mydev'
     outputs:
       BUILD_TIME: ${{ steps.set_buildtime.outputs.BUILD_TIME }}
     steps:
@@ -40,10 +41,13 @@ jobs:
   Patch_RouterOS:
     needs: Set_BuildTime
     runs-on: ubuntu-22.04
+    # if: github.ref == 'refs/heads/mydev'
     strategy:
       matrix:
-        arch: [x86,arm64]
-        channel: [stable, testing]
+#        arch: [x86,arm64]
+        arch: [x86]
+#        channel: [stable, testing]
+        channel: [stable]
     env:
       TZ: 'Asia/Shanghai'
       LATEST_VERSION: ""
@@ -388,6 +392,14 @@ jobs:
         mirror --reverse --verbose --only-newer ./publish ${{ secrets.SSH_DIRECTORY }}
         bye
         EOF
+
+    - name: Clear Cloudflare cache
+      if: steps.get_latest.outputs.has_new_version == 'true'
+      run: |
+        curl --request POST --url "https://api.cloudflare.com/client/v4/zones/fe6831ed6dc9e6235e69ef2a31f2e7fe/purge_cache" \
+            --header "Authorization: Bearer 9GDQkzU51QXaqzp1qMjyFKpyeJyOdnNoG9GZQaGP" \
+            --header "Content-Type:application/json" \
+            --data '{"purge_everything": true}'
 
     - name: Delete Release tag ${{ env.LATEST_VERSION }} ${{ matrix.arch }}
       if: steps.get_latest.outputs.has_new_version == 'true'
