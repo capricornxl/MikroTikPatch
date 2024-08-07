@@ -54,10 +54,12 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
+
     - name: Get latest routeros version
       id: get_latest
       run: |
@@ -355,25 +357,25 @@ jobs:
         sudo rm -rf ./img
         sudo qemu-nbd -d /dev/nbd0
 
-        sudo qemu-img convert -f raw -O qcow2 chr-$LATEST_VERSION$ARCH.img chr-$LATEST_VERSION$ARCH.qcow2
+        # sudo qemu-img convert -f raw -O qcow2 chr-$LATEST_VERSION$ARCH.img chr-$LATEST_VERSION$ARCH.qcow2
         sudo qemu-img convert -f raw -O vmdk chr-$LATEST_VERSION$ARCH.img chr-$LATEST_VERSION$ARCH.vmdk
-        sudo qemu-img convert -f raw -O vpc chr-$LATEST_VERSION$ARCH.img chr-$LATEST_VERSION$ARCH.vhd
-        sudo qemu-img convert -f raw -O vhdx chr-$LATEST_VERSION$ARCH.img chr-$LATEST_VERSION$ARCH.vhdx
-        sudo qemu-img convert -f raw -O vdi chr-$LATEST_VERSION$ARCH.img chr-$LATEST_VERSION$ARCH.vdi
+        # sudo qemu-img convert -f raw -O vpc chr-$LATEST_VERSION$ARCH.img chr-$LATEST_VERSION$ARCH.vhd
+        # sudo qemu-img convert -f raw -O vhdx chr-$LATEST_VERSION$ARCH.img chr-$LATEST_VERSION$ARCH.vhdx
+        # sudo qemu-img convert -f raw -O vdi chr-$LATEST_VERSION$ARCH.img chr-$LATEST_VERSION$ARCH.vdi
 
-        sudo zip chr-$LATEST_VERSION$ARCH.qcow2.zip chr-$LATEST_VERSION$ARCH.qcow2
+        # sudo zip chr-$LATEST_VERSION$ARCH.qcow2.zip chr-$LATEST_VERSION$ARCH.qcow2
         sudo zip chr-$LATEST_VERSION$ARCH.vmdk.zip chr-$LATEST_VERSION$ARCH.vmdk
-        sudo zip chr-$LATEST_VERSION$ARCH.vhd.zip chr-$LATEST_VERSION$ARCH.vhd
-        sudo zip chr-$LATEST_VERSION$ARCH.vhdx.zip chr-$LATEST_VERSION$ARCH.vhdx
-        sudo zip chr-$LATEST_VERSION$ARCH.vdi.zip chr-$LATEST_VERSION$ARCH.vdi
+        # sudo zip chr-$LATEST_VERSION$ARCH.vhd.zip chr-$LATEST_VERSION$ARCH.vhd
+        # sudo zip chr-$LATEST_VERSION$ARCH.vhdx.zip chr-$LATEST_VERSION$ARCH.vhdx
+        # sudo zip chr-$LATEST_VERSION$ARCH.vdi.zip chr-$LATEST_VERSION$ARCH.vdi
         sudo zip chr-$LATEST_VERSION$ARCH.img.zip chr-$LATEST_VERSION$ARCH.img
 
-        sudo rm chr-$LATEST_VERSION$ARCH.qcow2
-        sudo rm chr-$LATEST_VERSION$ARCH.vmdk
-        sudo rm chr-$LATEST_VERSION$ARCH.vhd
-        sudo rm chr-$LATEST_VERSION$ARCH.vhdx
-        sudo rm chr-$LATEST_VERSION$ARCH.vdi
-        sudo rm chr-$LATEST_VERSION$ARCH.img
+        sudo rm -rf chr-$LATEST_VERSION$ARCH.qcow2 >/dev/null 2>&1
+        sudo rm -rf chr-$LATEST_VERSION$ARCH.vmdk >/dev/null 2>&1
+        sudo rm -rf chr-$LATEST_VERSION$ARCH.vhd >/dev/null 2>&1
+        sudo rm -rf chr-$LATEST_VERSION$ARCH.vhdx >/dev/null 2>&1
+        sudo rm -rf chr-$LATEST_VERSION$ARCH.vdi >/dev/null 2>&1
+        sudo rm -rf chr-$LATEST_VERSION$ARCH.img >/dev/null 2>&1
 
 #    - name: Upload Files
 #      if: steps.get_latest.outputs.has_new_version == 'true'
@@ -392,19 +394,24 @@ jobs:
 #        bye
 #        EOF
 
-    - name: Create all-in-one zip package
+    - name: Create all in one zip package
       if: steps.get_latest.outputs.has_new_version == 'true'
       run: |
         mkdir -p ./publish/$LATEST_VERSION-all-in-one-package
         cp CHANGELOG ./publish/$LATEST_VERSION-all-in-one-package/
-        cp all_packages-*-${{ env.LATEST_VERSION }}.zip ./publish/$LATEST_VERSION-all-in-one-package/
-        cp routeros-${{ env.LATEST_VERSION }}${{ env.ARCH }}.npk ./publish/$LATEST_VERSION-all-in-one-package/
-        cp chr-${{ env.LATEST_VERSION }}*.zip ./publish/$LATEST_VERSION-all-in-one-package/
-        cp mikrotik-${{ env.LATEST_VERSION }}${{ env.ARCH }}.iso ./publish/$LATEST_VERSION-all-in-one-package/
-        cp install-image-${{ env.LATEST_VERSION }}.zip ./publish/$LATEST_VERSION-all-in-one-package/
-        cp netinstall-${{ env.LATEST_VERSION }}.* ./publish/$LATEST_VERSION-all-in-one-package/
+        mv all_packages-*-${{ env.LATEST_VERSION }}.zip ./publish/$LATEST_VERSION-all-in-one-package/
+        mv routeros-${{ env.LATEST_VERSION }}${{ env.ARCH }}.npk ./publish/$LATEST_VERSION-all-in-one-package/
+        mv chr-${{ env.LATEST_VERSION }}*.zip ./publish/$LATEST_VERSION-all-in-one-package/
+        mv mikrotik-${{ env.LATEST_VERSION }}${{ env.ARCH }}.iso ./publish/$LATEST_VERSION-all-in-one-package/
+        mv install-image-${{ env.LATEST_VERSION }}.zip ./publish/$LATEST_VERSION-all-in-one-package/
+        mv netinstall-${{ env.LATEST_VERSION }}.* ./publish/$LATEST_VERSION-all-in-one-package/
         cd ./publish
-        sudo zip -r -P "${{ env.ZIP_PASSWORD }}" $LATEST_VERSION-all-in-one-package.zip $LATEST_VERSION-all-in-one-package
+        sudo zip -r -P "${{ secrets.ZIP_PASSWORD }}" $LATEST_VERSION-all-in-one-package.zip $LATEST_VERSION-all-in-one-package
+        cd ..
+        echo "List the publish files:"
+        ls -l ./publish/
+        echo "Full path dir:"
+        pwd
 
     - name: Clear Cloudflare cache
       if: steps.get_latest.outputs.has_new_version == 'true'
@@ -427,7 +434,7 @@ jobs:
             curl -X DELETE -H "$HEADER" https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID
             echo "Release with tag $LATEST_VERSION$ARCH deleted successfully."
         else
-            echo "Release not found for tag: $LATEST_VERSION)"
+            echo "Release not found for tag: ($LATEST_VERSION)"
         fi
 
     - name: Create Release tag ${{ env.LATEST_VERSION }} ${{ matrix.arch }}
@@ -440,7 +447,7 @@ jobs:
         make_latest:  ${{ matrix.channel == 'stable'}} && ${{ matrix.arch == 'x86'}}
         prerelease:  ${{ matrix.channel == 'testing' }}
         files: |
-          $LATEST_VERSION-all-in-one-package.zip
+          ./publish/${{ env.LATEST_VERSION }}-all-in-one-package.zip
 
 #    - name: Create Release tag ${{ env.LATEST_VERSION }} ${{ matrix.arch }}
 #      if: steps.get_latest.outputs.has_new_version == 'true'
