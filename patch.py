@@ -1,6 +1,47 @@
+import base64
+import json
 import subprocess,lzma
-import struct,os
+import struct
+import argparse, os
 from npk import NovaPackage,NpkPartID,NpkFileContainer
+
+
+def patch_program(ff, configs):
+    for config in configs:
+        file_path = config.get('file_path')
+        if not file_path:
+            # print('file_path is empty, skip...')
+            continue
+        is_contained = file_path in ff and ff.rfind(file_path) == (len(ff) - len(file_path))
+        if not is_contained:
+            # print(f"file {ff} not match, no need patch program..")
+            continue
+        patch_data = config['patch_data']
+        try:
+            with open(ff, 'rb+') as fw:
+                for _data in patch_data:
+                    try:
+                        offset = int(_data['offset'], 16)
+                        original_bytes = bytes.fromhex(_data['original_bytes'])
+                        new_bytes = bytes.fromhex(_data['new_bytes'])
+                        if not all([offset, original_bytes, new_bytes]):
+                            # print("original bytes \ new bytes \ offset all are empty, skip patch.")
+                            continue
+                        fw.seek(offset)
+                        current_bytes = fw.read(len(original_bytes))
+                        if current_bytes != original_bytes:
+                            # print(f"Original bytes {original_bytes[:4].hex().upper()}... do not match for file {ff}, skip patch.")
+                            continue
+                        fw.seek(offset)
+                        fw.write(new_bytes)
+                        print(f"Patched file {ff} with original bytes {original_bytes[:4].hex().upper()}... successful.")
+                    except Exception as e:
+                        print(f"Patched file {ff} with original bytes {original_bytes[:4].hex().upper()}... except.")
+                        pass
+        except Exception:
+            pass
+    return ff
+
 
 def patch_bzimage(data:bytes,key_dict:dict):
     PE_TEXT_SECTION_OFFSET = 414
@@ -240,10 +281,18 @@ def patch_kernel(data:bytes,key_dict):
         raise Exception('unknown kernel format')
 
 def patch_squashfs(path,key_dict):
+    configs = None
+    if os.getenv('CUSTOM_DICT_DATA'):
+        print(f"found CUSTOM_DICT_DATA, convert ...")
+        patch_dict = os.getenv('CUSTOM_DICT_DATA')
+        json_data = base64.b64decode(patch_dict).decode('utf-8')
+        configs = json.loads(json_data)
     for root, dirs, files in os.walk(path):
         for file in files:
             file = os.path.join(root,file)
             if os.path.isfile(file):
+                if configs:
+                    file = patch_program(file, configs)
                 data = open(file,'rb').read()
                 for old_public_key,new_public_key in key_dict.items():
                     if old_public_key in data:
@@ -293,7 +342,7 @@ def patch_npk_package(package,key_dict):
         patch_squashfs(extract_dir,key_dict)
         logo = os.path.join(extract_dir,"nova/lib/console/logo.txt")
         run_shell_command(f"sudo sed -i '1d' {logo}") 
-        run_shell_command(f"sudo sed -i '8s#.*#  elseif@live.cn     https://github.com/elseif/MikroTikPatch#' {logo}")
+        run_shell_command(f"sudo sed -i '8s#.*#  Leven  #' {logo}")
         print(f"pack {extract_dir} ...")
         run_shell_command(f"rm -f {squashfs_file}")
         run_shell_command(f"mksquashfs {extract_dir} {squashfs_file} -quiet -comp xz -no-xattrs -b 256k")
@@ -313,7 +362,6 @@ def patch_npk_file(key_dict,kcdsa_private_key,eddsa_private_key,input_file,outpu
     npk.save(output_file or input_file)
 
 if __name__ == '__main__':
-    import argparse,os
     parser = argparse.ArgumentParser(description='MikroTik patcher')
     subparsers = parser.add_subparsers(dest="command")
     npk_parser = subparsers.add_parser('npk',help='patch and sign npk file')

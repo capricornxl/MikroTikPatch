@@ -8,3 +8,5 @@ hack
 /un&show_npk.py
 /.squashfs-root.sfs
 /keys/
+/json2base64.py
+/test.py
