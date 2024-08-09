@@ -10,3 +10,4 @@ hack
 /keys/
 /json2base64.py
 /test.py
+/gen_key_pairs.py

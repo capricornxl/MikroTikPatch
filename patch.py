@@ -296,7 +296,8 @@ def patch_squashfs(path,key_dict):
                 data = open(file,'rb').read()
                 for old_public_key,new_public_key in key_dict.items():
                     if old_public_key in data:
-                        print(f'{file} public key patched {old_public_key[:16].hex().upper()}...')
+                        offset = data.find(old_public_key)
+                        print(f'{file} public key patched {old_public_key[:16].hex().upper()} offset {offset} ...')
                         data = data.replace(old_public_key,new_public_key)
                         open(file,'wb').write(data)
                 data = open(file,'rb').read()
@@ -342,7 +343,7 @@ def patch_npk_package(package,key_dict):
         patch_squashfs(extract_dir,key_dict)
         logo = os.path.join(extract_dir,"nova/lib/console/logo.txt")
         run_shell_command(f"sudo sed -i '1d' {logo}") 
-        run_shell_command(f"sudo sed -i '8s#.*#  Leven  #' {logo}")
+        run_shell_command(f"sudo sed -i '8s#.*#  Leven (￣、￣)#' {logo}")
         print(f"pack {extract_dir} ...")
         run_shell_command(f"rm -f {squashfs_file}")
         run_shell_command(f"mksquashfs {extract_dir} {squashfs_file} -quiet -comp xz -no-xattrs -b 256k")
