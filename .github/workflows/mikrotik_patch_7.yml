@@ -45,8 +45,8 @@ jobs:
       matrix:
 #        arch: [x86,arm64]
         arch: [x86]
-#        channel: [stable, testing]
-        channel: [stable]
+        channel: [stable, testing]
+#        channel: [stable]
     env:
       TZ: 'Asia/Shanghai'
       LATEST_VERSION: ""
