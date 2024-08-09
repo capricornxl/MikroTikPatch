@@ -11,3 +11,6 @@ hack
 /json2base64.py
 /test.py
 /gen_key_pairs.py
+/gen_key_pairs_new.py
+/curve25519.py
+/gen_license.py
